@@ -10,8 +10,6 @@
 #include <string>
 #include <sstream>
 
-#include "ThreadQueue.h"
-
 #pragma comment (lib, "ws2_32.lib")
 
 // Number of ms to sleep to assist in multithreading as the operations
@@ -127,7 +125,7 @@ void handleConnection(SOCKET clientSocket, int userNumber, int threadNumber) {
 	byteCount = strlen(outText.c_str());
 
 	coutMu.lock();
-	std::cout << "User number " << userNumber << " on thread " << threadNumber << "is sending message" << std::endl;
+	std::cout << "User number " << userNumber << " on thread " << threadNumber << " is sending message" << std::endl;
 	coutMu.unlock();
 
 	// A pause just so we can get more concurrent threads, this operation
@@ -138,7 +136,7 @@ void handleConnection(SOCKET clientSocket, int userNumber, int threadNumber) {
 
 	int concurrentThreadsNow = readConcurrentThreads();
 	coutMu.lock();
-	std::cout << "User number " << userNumber << " on thread " << threadNumber << "is closing the connection! concurrentThreads: " << concurrentThreadsNow << std::endl;
+	std::cout << "User number " << userNumber << " on thread " << threadNumber << " is closing the connection! concurrentThreads: " << concurrentThreadsNow << std::endl;
 	coutMu.unlock();
 	// Thread is dying, decrement the counter of concurrent threads.
 	decrementConcurrentThreads();
@@ -148,7 +146,7 @@ void handleQueue(int threadNumber) {
 	while (true) {
 		/* We want to lock access to the socket Queue during the following critical section:
 		 * 
-		 * 1. Getting the size of the queue to check if it's empty or not
+		 * 1. Checking the queue to see if it's empty.
 		 * 2. If it's not empty, getting the front of the queue
 		 * 3. If it's not empty, popping the value at the front of the queue.
 		 * 
@@ -157,8 +155,7 @@ void handleQueue(int threadNumber) {
 		 * only to find there's nothing left and causing an error.
 		 * */
 		socketMu.lock();
-		int socketSize = socketQueue.size();
-		if (socketSize > 0) { // something in the queue exists, let's try to pop
+		if (!socketQueue.empty()) { // something in the queue exists, let's try to pop
 			SOCKET client = socketQueue.front(); // Get the client socket
 			socketQueue.pop();
 			socketMu.unlock();
@@ -166,7 +163,6 @@ void handleQueue(int threadNumber) {
 			// Thread begins
 			coutMu.lock();
 			std::cout << "Starting thread " << threadNumber << std::endl;
-			std::cout << "Queue size: " << socketSize << std::endl;
 			coutMu.unlock();
 
 			// increment the total users that have connected to the server
