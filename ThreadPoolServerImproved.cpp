@@ -143,6 +143,9 @@ void handleConnection(SOCKET clientSocket, int userNumber, int threadNumber) {
 	coutMu.lock();
 	std::cout << "User number " << userNumber << " on thread " << threadNumber << " is closing the connection!" << std::endl;
 	std::cout << "concurrentThreads: " << concurrentThreadsNow << std::endl;
+	if (concurrentThreadsNow > MAX_THREADS) {
+		throw std::runtime_error("Error! concurrent threads exceeds MAX_THREADS, something has gone wrong!");
+	}
 	std::cout << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Ending handleConnection on thread " << threadNumber << std::endl;
 	coutMu.unlock();
 	// Thread is dying, decrement the counter of concurrent threads.
@@ -163,6 +166,9 @@ void handleQueue(int threadNumber) {
 		// Thread begins
 		SOCKET client = socketQueue.front(); // Get the client socket
 		socketQueue.pop();
+		coutMu.lock();
+		std::cout << "Popping from queue, queue size: " << socketQueue.size() << std::endl;
+		coutMu.unlock();
 		socketLock.unlock();
 		// We pop from the queue, and notify a waiting thread to check if the queue is empty, as this thread is
 		// done with access to the queue.
@@ -256,9 +262,10 @@ int main() {
 		{
 			std::lock_guard<std::mutex> socketLock(socketMu);
 			socketQueue.push(clientSocket);
+			std::cout << "pushed to queue. Queue size: " << socketQueue.size() << std::endl;
+
 		}
 		socketCV.notify_one();
-		std::cout << "pushed to queue." << std::endl;
 		coutMu.unlock();
 	}
 

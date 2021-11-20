@@ -12,6 +12,8 @@
 // used to lock and unlock std::cout for pretty-printing to console/file
 std::mutex mu;
 
+static const std::string EXPECTED_FILE_CONTENTS = "Hello, this is some random text that I've generated for the purpose of a multithreaded server test.";
+
 void createConnection(int id) {
 	const std::string IP_ADDRESS = "127.0.0.1";
 	const int PORT = 54000;
@@ -64,9 +66,14 @@ void createConnection(int id) {
 
 	// receive the message
 	byteCount = recv(sock, buf, BUFSIZE, 0);
+	std::string fileContents = std::string(buf);
 	mu.lock();
-	std::cout << "Thread with id: " << id << " received: " << std::string(buf) << std::endl;
+	std::cout << "Thread with id: " << id << " received: " << fileContents << std::endl;
 	mu.unlock();
+
+	if (fileContents != EXPECTED_FILE_CONTENTS) {
+		throw std::runtime_error("The contents of the file are unexpected!");
+	}
 }
 
 void main() {
