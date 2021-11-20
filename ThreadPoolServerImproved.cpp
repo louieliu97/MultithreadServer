@@ -11,6 +11,8 @@
 #include <string>
 #include <sstream>
 
+#include "ThreadPoolVars.h"
+
 #pragma comment (lib, "ws2_32.lib")
 
 // Number of ms to sleep to assist in multithreading as the operations
@@ -38,45 +40,12 @@ static std::queue<SOCKET> socketQueue;
 // consumes a lot of CPU
 std::condition_variable  socketCV;
 
-// mutex for std::cout
-std::mutex coutMu;
-
-// get the current total users connected
-int readUserNumber() {
-	std::unique_lock<std::mutex> sharedLock(usersMu);
-	return totalUsersConnected;
-}
-
-// increment the total users connected
-void incrementUserNumber() {
-	std::unique_lock<std::mutex> lock(usersMu);
-	totalUsersConnected++;
-}
-
-// get the current number of concurrent threads
-int readConcurrentThreads() {
-	std::unique_lock<std::mutex> sharedLock(concThreadsMu);
-	return concurrentThreads;
-}
-
-// increment the number of concurrent threads
-void incrementConcurrentThreads() {
-	std::unique_lock<std::mutex> sharedLock(concThreadsMu);
-	concurrentThreads++;
-}
-
-// decrement the number of concurrent threads
-void decrementConcurrentThreads() {
-	std::unique_lock<std::mutex> sharedLock(concThreadsMu);
-	concurrentThreads--;
-}
 
 // Function that handles the connection once popped from the queue
-void handleConnection(SOCKET clientSocket, int userNumber, int threadNumber) {
-	incrementConcurrentThreads();
-	coutMu.lock();
-	std::cout << "User number " << userNumber << " on thread " << threadNumber << " has connected." << std::endl;
-	coutMu.unlock();
+void handleConnection(SOCKET clientSocket, int userNumber, int threadNumber, std::shared_ptr<ThreadPoolVars> threadVars) {
+	threadVars->incrementConcurrentThreads();
+	std::string coutStr = "User number " + std::to_string(userNumber) + " on thread " + std::to_string(threadNumber) + " has connected.";
+	threadVars->print(coutStr);
 
 	// tell the user to request a file
 	std::string reqString = "Please request a file: ";
@@ -89,21 +58,18 @@ void handleConnection(SOCKET clientSocket, int userNumber, int threadNumber) {
 	// Receive a message from the client
 	int byteCount = recv(clientSocket, buf, BUFSIZE, 0);
 
-	coutMu.lock();
-	std::cout << "User number " << userNumber << " on thread " << threadNumber << " received message" << std::endl;
-	coutMu.unlock();
+	coutStr = "User number " + std::to_string(userNumber) + " on thread " + std::to_string(threadNumber) + " received message.";
+	threadVars->print(coutStr);
 
 	if (byteCount == SOCKET_ERROR) {
-		coutMu.lock();
-		std::cout << "Error in recv(), quitting" << std::endl;
-		coutMu.unlock();
+		coutStr = "Error in recv(), quitting";
+		threadVars->print(coutStr);
 		return;
 	}
 
 	if (byteCount == 0) {
-		coutMu.lock();
-		std::cout << "Client disconnected " << std::endl;
-		coutMu.unlock();
+		coutStr = "Client disconnected ";
+		threadVars->print(coutStr);
 		return;
 	}
 
@@ -129,9 +95,8 @@ void handleConnection(SOCKET clientSocket, int userNumber, int threadNumber) {
 	strcpy_s(buf, outText.c_str());
 	byteCount = strlen(outText.c_str());
 
-	coutMu.lock();
-	std::cout << "User number " << userNumber << " on thread " << threadNumber << " is sending message" << std::endl;
-	coutMu.unlock();
+	coutStr = "User number " + std::to_string(userNumber) + " on thread " + std::to_string(threadNumber) + " is sending message.";
+	threadVars->print(coutStr);
 
 	// A pause just so we can get more concurrent threads, this operation
 	// is so quick that usually there aren't more than 1 or 2 concurrent threads naturally.
@@ -139,20 +104,20 @@ void handleConnection(SOCKET clientSocket, int userNumber, int threadNumber) {
 	send(clientSocket, buf, byteCount, 0);
 	closesocket(clientSocket);
 
-	int concurrentThreadsNow = readConcurrentThreads();
-	coutMu.lock();
-	std::cout << "User number " << userNumber << " on thread " << threadNumber << " is closing the connection!" << std::endl;
-	std::cout << "concurrentThreads: " << concurrentThreadsNow << std::endl;
+	int concurrentThreadsNow = threadVars->readConcurrentThreads();
 	if (concurrentThreadsNow > MAX_THREADS) {
 		throw std::runtime_error("Error! concurrent threads exceeds MAX_THREADS, something has gone wrong!");
 	}
-	std::cout << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Ending handleConnection on thread " << threadNumber << std::endl;
-	coutMu.unlock();
+
+	coutStr = "User number " + std::to_string(userNumber) + " on thread " + std::to_string(threadNumber) + " is sending message.\nConcurrent threads: " +
+		std::to_string(concurrentThreadsNow) + "\n<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Ending handleConnection on thread " +
+		std::to_string(threadNumber);
+	threadVars->print(coutStr);
 	// Thread is dying, decrement the counter of concurrent threads.
-	decrementConcurrentThreads();
+	threadVars->decrementConcurrentThreads();
 }
 
-void handleQueue(int threadNumber) {
+void handleQueue(int threadNumber, std::shared_ptr<ThreadPoolVars> threadVars) {
 	while (true) {
 		/*
 		 * Part of the improvement from the previous thread pool solution is we can use a condition_variable
@@ -166,9 +131,8 @@ void handleQueue(int threadNumber) {
 		// Thread begins
 		SOCKET client = socketQueue.front(); // Get the client socket
 		socketQueue.pop();
-		coutMu.lock();
-		std::cout << "Popping from queue, queue size: " << socketQueue.size() << std::endl;
-		coutMu.unlock();
+		std::string queuePopString = "Popping from queue, queue size: " + std::to_string(socketQueue.size());
+		threadVars->print(queuePopString);
 		socketLock.unlock();
 		// We pop from the queue, and notify a waiting thread to check if the queue is empty, as this thread is
 		// done with access to the queue.
@@ -176,12 +140,11 @@ void handleQueue(int threadNumber) {
 
 
 		// increment the total users that have connected to the server
-		incrementUserNumber();
-		int userNumber = readUserNumber();
-		coutMu.lock();
-		std::cout << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Starting handleConnection on thread  " << threadNumber << std::endl;
-		coutMu.unlock();
-		handleConnection(client, userNumber, threadNumber); // let this function handle it now.
+		threadVars->incrementUsersConnected();
+		int userNumber = threadVars->readUsersConnected();
+		std::string threadStartString = ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Starting handleConnection on thread  " + std::to_string(threadNumber);
+		threadVars->print(threadStartString);
+		handleConnection(client, userNumber, threadNumber, threadVars); // let this function handle it now.
 	}
 }
 
@@ -219,10 +182,11 @@ int main() {
 	listen(listening, SOMAXCONN);
 	std::cout << "Listening for connections..." << std::endl;
 
+	std::shared_ptr<ThreadPoolVars> threadVars = std::make_shared<ThreadPoolVars>();
 	std::vector<std::thread> threads;
 	for (int i = 0; i < MAX_THREADS; i++) {
-		std::cout << "create thread: " << i + 1 << std::endl;
-		threads.emplace_back(std::thread(handleQueue, i + 1));
+		std::cout << "Creating thread: " << i + 1 << std::endl;
+		threads.emplace_back(std::thread(handleQueue, i + 1, threadVars));
 	}
 
 	while (true) {
@@ -243,30 +207,29 @@ int main() {
 		ZeroMemory(host, NI_MAXHOST);
 		ZeroMemory(service, NI_MAXHOST);
 
+		std::string coutStr;
 		if (getnameinfo((sockaddr*)&client, sizeof(client), host, NI_MAXHOST, service, NI_MAXSERV, 0) == 0) {
-			coutMu.lock();
-			std::cout << host << " connected on port " << service << std::endl;
-			coutMu.unlock();
+			coutStr = std::string(host) + " connected on port " + service;
+			threadVars->print(coutStr);
 		}
 		else
 		{
 			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
-			coutMu.lock();
-			std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;
-			coutMu.unlock();
+			coutStr = std::string(host) + " connected on port " + std::to_string(ntohs(client.sin_port));
+			threadVars->print(coutStr);
 		}
 		// we got a connection, insert into thread pool
 
-		coutMu.lock();
-		std::cout << "pushing to queue" << std::endl;
+		coutStr = "pushing to queue";
+		threadVars->print(coutStr);
 		{
 			std::lock_guard<std::mutex> socketLock(socketMu);
 			socketQueue.push(clientSocket);
-			std::cout << "pushed to queue. Queue size: " << socketQueue.size() << std::endl;
+			coutStr = "pushed to queue. Queue size: " + std::to_string(socketQueue.size());
+			threadVars->print(coutStr);
 
 		}
 		socketCV.notify_one();
-		coutMu.unlock();
 	}
 
 	// close listening socket
