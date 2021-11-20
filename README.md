@@ -24,3 +24,11 @@ There are a few more shared variables that are kept track of to print, as to bet
 We also keep track on a per thread basis, the number it is.
 
 With these two extra variables, and keeping track of the thread number, we can associate user numbers of thread numbers to ensure as a thread frees up, it takes in the next user in the queue. We also can see the number of concurrentThreads being used at a time, and we expect this value to always be <= MAX_THREADS.
+
+## Client
+The Client creates NUM_THREADS connections, currently 100, to the server IP Address and port (Default is 127.0.0.1:54000). It receives a message, then sends a message containing the correct filename to the server. It then receives the contents of that file, and then closes the connection.
+
+### Building And Usage
+To build either server, either run it in Visual Studio, or on the Developer CMD for VS 2019, navigate to the folder and run `cl <ServerName>.cpp /EHsc`. After that compiles, run `<Servername>.exe` to start the server.
+
+To compile the client, run `cl Client.cpp /EHsc`, then `Client.exe` to execute. **MAKE SURE THE SERVER IS RUNNING FIRST!**
