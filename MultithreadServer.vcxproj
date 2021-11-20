@@ -139,11 +139,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ThreadedClient.cpp" />
+    <ClCompile Include="Client.cpp" />
     <ClCompile Include="ThreadedServer.cpp" />
+    <ClCompile Include="ThreadPoolServer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="RandomText.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ThreadQueue.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

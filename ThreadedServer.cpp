@@ -9,16 +9,20 @@
 
 #pragma comment (lib, "ws2_32.lib")
 
-// Used to lock std::cout for pretty printing to console
-// and to increment/decrement concurrentThreads
-std::mutex mu;
+// mutex for increment/decrement concurrentThreads
+std::mutex threadMu;
 static int concurrentThreads = 0;
 
+// Used to lock std::cout for pretty printing to console
+std::mutex coutMu;
+
 void handleConnection(SOCKET clientSocket, int i) {
-	mu.lock();
+	threadMu.lock();
 	concurrentThreads++;
+	coutMu.lock();
 	std::cout << "Thread " << i << "connected, concurrentThreads: " << concurrentThreads << std::endl;
-	mu.unlock();
+	coutMu.unlock();
+	threadMu.unlock();
 
 	const int BUFSIZE = 4096;
 	char buf[BUFSIZE];
@@ -27,17 +31,21 @@ void handleConnection(SOCKET clientSocket, int i) {
 	// Receive a message from the client
 	int byteCount = recv(clientSocket, buf, BUFSIZE, 0);
 
-	mu.lock();
+	coutMu.lock();
 	std::cout << "Thread " << i << " received message" << std::endl;
-	mu.unlock();
+	coutMu.unlock();
 
 	if (byteCount == SOCKET_ERROR) {
-		std::cerr << "Error in recv(), quitting" << std::endl;
+		coutMu.lock();
+		std::cout << "Error in recv(), quitting" << std::endl;
+		coutMu.unlock();
 		return;
 	}
 
 	if (byteCount == 0) {
+		coutMu.lock();
 		std::cout << "Client disconnected " << std::endl;
+		coutMu.unlock();
 		return;
 	}
 
@@ -62,22 +70,24 @@ void handleConnection(SOCKET clientSocket, int i) {
 	strcpy_s(buf, outText.c_str());
 	byteCount = strlen(outText.c_str());
 
-	mu.lock();
+	coutMu.lock();
 	std::cout << "Thread " << i << "sending message" << std::endl;
-	mu.unlock();
+	coutMu.unlock();
 
 	// A pause just so we can get more concurrent threads, this operation
 	// is so quick that usually there aren't more than 1 or 2 concurrent threads.
-	// Sleeping 25ms usually gives around 10 concurrent threads at a time
+	// Sleeping 25ms usually gives around 13-15 concurrent threads at a time
 	Sleep(25);
 	send(clientSocket, buf, byteCount, 0);
 	closesocket(clientSocket);
 	f.close();
 
-	mu.lock();
+	threadMu.lock();
+	coutMu.lock();
 	concurrentThreads--;
-	std::cout << "Thread " << i << "Closing Connection! concurrentThreads: " << concurrentThreads << std::endl;
-	mu.unlock();
+	std::cout << "Thread " << i << " is closing the connection! concurrentThreads: " << concurrentThreads << std::endl;
+	coutMu.unlock();
+	threadMu.unlock();
 }
 
 void main() {
@@ -136,16 +146,16 @@ void main() {
 		ZeroMemory(service, NI_MAXHOST);
 
 		if (getnameinfo((sockaddr*)&client, sizeof(client), host, NI_MAXHOST, service, NI_MAXSERV, 0) == 0) {
-			mu.lock();
+			coutMu.lock();
 			std::cout << host << " connected on port " << service << std::endl;
-			mu.unlock();
+			coutMu.unlock();
 		}
 		else
 		{
 			inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
-			mu.lock();
+			coutMu.lock();
 			std::cout << host << " connected on port " << ntohs(client.sin_port) << std::endl;
-			mu.unlock();
+			coutMu.unlock();
 		}
 
 		// tell the user to request a file
